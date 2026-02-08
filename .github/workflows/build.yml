@@ -9,13 +9,16 @@ jobs:
   build:
     name: Build iOS IPA
     runs-on: macos-15
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Select Xcode version
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+          xcodebuild -showsdks | grep iphoneos
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -28,15 +31,19 @@ jobs:
           xcodebuild archive \
             -project MeshLink.xcodeproj \
             -scheme MeshLink \
+            -sdk iphoneos \
             -archivePath build/MeshLink.xcarchive \
             -destination "generic/platform=iOS" \
             -configuration Release \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_IDENTITY=- \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE="" \
-            ENABLE_BITCODE=NO
+            ENABLE_BITCODE=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SKIP_INSTALL=NO
 
       - name: Create IPA
         run: |
