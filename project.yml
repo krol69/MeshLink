@@ -1,39 +1,59 @@
-name: MeshLink
-options:
-  bundleIdPrefix: com.meshlink
-  deploymentTarget:
-    iOS: "16.0"
-  xcodeVersion: "15.0"
-  createIntermediateGroups: true
+name: Build MeshLink IPA
 
-settings:
-  base:
-    SWIFT_VERSION: "5.9"
-    TARGETED_DEVICE_FAMILY: "1,2"
-    INFOPLIST_FILE: MeshLink/Info.plist
-    PRODUCT_BUNDLE_IDENTIFIER: com.meshlink.app
-    MARKETING_VERSION: "2.0.0"
-    CURRENT_PROJECT_VERSION: "1"
-    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-    CODE_SIGN_STYLE: Automatic
-    GENERATE_INFOPLIST_FILE: false
-    ENABLE_BITCODE: false
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
-targets:
-  MeshLink:
-    type: application
-    platform: iOS
-    sources:
-      - path: MeshLink
-    settings:
-      base:
-        PRODUCT_NAME: MeshLink
-        INFOPLIST_FILE: MeshLink/Info.plist
-    info:
-      path: MeshLink/Info.plist
-      properties:
-        UIBackgroundModes:
-          - bluetooth-central
-          - bluetooth-peripheral
-        NSBluetoothAlwaysUsageDescription: "MeshLink uses Bluetooth to find and connect to nearby peers for encrypted messaging."
-        NSBluetoothPeripheralUsageDescription: "MeshLink uses Bluetooth to communicate with nearby peers."
+jobs:
+  build:
+    name: Build iOS IPA
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Select Xcode version
+        run: |
+          ls /Applications/ | grep Xcode
+          sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode Project
+        run: xcodegen generate
+
+      - name: Build Archive
+        run: |
+          xcodebuild archive \
+            -project MeshLink.xcodeproj \
+            -scheme MeshLink \
+            -sdk iphoneos \
+            -archivePath build/MeshLink.xcarchive \
+            -destination "generic/platform=iOS" \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=- \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE="" \
+            ENABLE_BITCODE=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SKIP_INSTALL=NO
+
+      - name: Create IPA
+        run: |
+          mkdir -p build/Payload
+          cp -r build/MeshLink.xcarchive/Products/Applications/MeshLink.app build/Payload/
+          cd build && zip -r MeshLink.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeshLink-IPA
+          path: build/MeshLink.ipa
+          retention-days: 90
