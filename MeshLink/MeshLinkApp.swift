@@ -6,15 +6,16 @@ struct MeshLinkApp: App {
     
     var body: some Scene {
         WindowGroup {
-            if vm.isSetup {
-                MainView()
-                    .environmentObject(vm)
-                    .preferredColorScheme(.dark)
-            } else {
-                SetupView()
-                    .environmentObject(vm)
-                    .preferredColorScheme(.dark)
+            Group {
+                if vm.isSetup {
+                    MainView()
+                        .environmentObject(vm)
+                } else {
+                    SetupView()
+                        .environmentObject(vm)
+                }
             }
+            .preferredColorScheme(.dark)
         }
     }
 }
@@ -34,18 +35,18 @@ struct Theme {
     static let text1 = Color(hex: "E2E8F0")
     static let text2 = Color.white.opacity(0.5)
     static let textMuted = Color.white.opacity(0.25)
+    static let purple = Color(hex: "818CF8")
     
     static let gradient = LinearGradient(
         colors: [accent, accentBlue],
         startPoint: .topLeading, endPoint: .bottomTrailing
     )
     static let gradientFull = LinearGradient(
-        colors: [accent, accentBlue, Color(hex: "818CF8")],
+        colors: [accent, accentBlue, purple],
         startPoint: .topLeading, endPoint: .bottomTrailing
     )
 }
 
-// MARK: - Color Hex Extension
 extension Color {
     init(hex: String) {
         let h = hex.trimmingCharacters(in: .alphanumerics.inverted)
@@ -60,13 +61,10 @@ extension Color {
     }
 }
 
-// MARK: - String → Color
 extension String {
     var meshColor: Color {
         var hash: Int = 0
-        for char in self.unicodeScalars {
-            hash = Int(char.value) &+ ((hash << 5) &- hash)
-        }
+        for char in self.unicodeScalars { hash = Int(char.value) &+ ((hash << 5) &- hash) }
         let hue = Double(abs(hash % 360)) / 360.0
         return Color(hue: hue, saturation: 0.65, brightness: 0.65)
     }
