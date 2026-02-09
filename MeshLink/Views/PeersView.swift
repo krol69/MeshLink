@@ -26,11 +26,7 @@ struct PeersView: View {
                     .foregroundColor(Theme.accent)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(
-                        vm.isScanning
-                            ? Theme.accent.opacity(0.04)
-                            : LinearGradient(colors: [Theme.accent.opacity(0.1), Theme.accentBlue.opacity(0.1)], startPoint: .leading, endPoint: .trailing)
-                    )
+                    .background(scanButtonBackground)
                     .cornerRadius(12)
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.borderAccent))
                 }
@@ -89,6 +85,18 @@ struct PeersView: View {
                     .padding(.top, 24)
                     .padding(.bottom, 30)
             }
+        }
+    }
+    
+    @ViewBuilder
+    private var scanButtonBackground: some View {
+        if vm.isScanning {
+            Theme.accent.opacity(0.04)
+        } else {
+            LinearGradient(
+                colors: [Theme.accent.opacity(0.1), Theme.accentBlue.opacity(0.1)],
+                startPoint: .leading, endPoint: .trailing
+            )
         }
     }
     
@@ -159,7 +167,6 @@ struct PeerCardView: View {
     let peer: BLEPeer
     let onConnect: () -> Void
     let onDisconnect: () -> Void
-    @State private var isHovered = false
     
     var body: some View {
         HStack(spacing: 12) {
