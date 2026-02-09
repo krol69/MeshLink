@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import CommonCrypto
 
 // MARK: - AES-256-GCM Encryption Service
 final class CryptoService {
@@ -7,7 +8,7 @@ final class CryptoService {
     
     private let salt = "meshlink-salt-v2".data(using: .utf8)!
     private let iterations = 100_000
-    private var derivedKey: SymmetricKey?
+    private(set) var derivedKey: SymmetricKey?
     
     var isReady: Bool { derivedKey != nil }
     
@@ -15,7 +16,6 @@ final class CryptoService {
     func deriveKey(from password: String) {
         guard !password.isEmpty else { derivedKey = nil; return }
         let passwordData = password.data(using: .utf8)!
-        // Use PBKDF2 via CommonCrypto
         var derivedBytes = [UInt8](repeating: 0, count: 32)
         let status = derivedBytes.withUnsafeMutableBytes { derivedBuf in
             passwordData.withUnsafeBytes { pwBuf in
@@ -39,7 +39,6 @@ final class CryptoService {
         }
     }
     
-    // MARK: - Encrypt
     func encrypt(_ plaintext: String) -> String {
         guard let key = derivedKey, let data = plaintext.data(using: .utf8) else { return plaintext }
         do {
@@ -51,11 +50,9 @@ final class CryptoService {
         }
     }
     
-    // MARK: - Decrypt
     func decrypt(_ ciphertext: String) -> String {
         guard ciphertext.hasPrefix("AES:"), let key = derivedKey else {
-            // Try XOR fallback for legacy messages
-            return xorDecrypt(ciphertext)
+            return ciphertext
         }
         let b64 = String(ciphertext.dropFirst(4))
         guard let data = Data(base64Encoded: b64) else { return "[Invalid data]" }
@@ -64,17 +61,23 @@ final class CryptoService {
             let decrypted = try AES.GCM.open(sealedBox, using: key)
             return String(data: decrypted, encoding: .utf8) ?? "[Decode error]"
         } catch {
-            return "[Decryption failed — wrong key?]"
+            return "[Decryption failed]"
         }
     }
     
-    // MARK: - XOR Fallback (legacy compat with web/Python)
-    private func xorDecrypt(_ cipher: String) -> String {
-        guard let data = Data(base64Encoded: cipher) else { return cipher }
-        // Would need the raw key string for XOR — skip for now
-        return cipher
+    func encryptData(_ data: Data) -> Data? {
+        guard let key = derivedKey else { return nil }
+        do {
+            let sealedBox = try AES.GCM.seal(data, using: key)
+            return sealedBox.combined
+        } catch { return nil }
+    }
+    
+    func decryptData(_ data: Data) -> Data? {
+        guard let key = derivedKey else { return nil }
+        do {
+            let sealedBox = try AES.GCM.SealedBox(combined: data)
+            return try AES.GCM.open(sealedBox, using: key)
+        } catch { return nil }
     }
 }
-
-// MARK: - CommonCrypto Bridge
-import CommonCrypto
