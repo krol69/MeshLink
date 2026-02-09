@@ -76,7 +76,6 @@ struct ChatView: View {
             Image(systemName: "dot.radiowaves.left.and.right")
                 .font(.system(size: 40))
                 .foregroundStyle(Theme.gradient)
-                .symbolEffect(.pulse)
             
             Text("No messages yet")
                 .font(.system(size: 15, weight: .medium))
@@ -126,24 +125,7 @@ struct ChatView: View {
                 .onSubmit { vm.sendMessage() }
                 .onChange(of: vm.inputText) { _ in vm.onInputChanged() }
                 
-                Button(action: vm.sendMessage) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(vm.inputText.trimmingCharacters(in: .whitespaces).isEmpty ? Theme.textMuted : Theme.bg0)
-                        .frame(width: 44, height: 44)
-                        .background(
-                            vm.inputText.trimmingCharacters(in: .whitespaces).isEmpty
-                                ? AnyShapeStyle(Theme.surface)
-                                : AnyShapeStyle(Theme.gradient)
-                        )
-                        .cornerRadius(12)
-                        .overlay(
-                            vm.inputText.trimmingCharacters(in: .whitespaces).isEmpty
-                                ? AnyShapeStyle(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
-                                : nil
-                        )
-                }
-                .disabled(vm.inputText.trimmingCharacters(in: .whitespaces).isEmpty)
+                sendButton
             }
             
             // Status bar
@@ -170,11 +152,46 @@ struct ChatView: View {
         .background(.ultraThinMaterial.opacity(0.3))
         .background(Theme.bg0.opacity(0.88))
     }
+    
+    private var sendButtonReady: Bool {
+        !vm.inputText.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+    
+    @ViewBuilder
+    private var sendButton: some View {
+        if sendButtonReady {
+            Button(action: vm.sendMessage) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(Theme.bg0)
+                    .frame(width: 44, height: 44)
+                    .background(Theme.gradient)
+                    .cornerRadius(12)
+            }
+        } else {
+            Button(action: {}) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(Theme.textMuted)
+                    .frame(width: 44, height: 44)
+                    .background(Theme.surface)
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
+            }
+            .disabled(true)
+        }
+    }
 }
 
 // MARK: - Message Bubble
 struct MessageBubbleView: View {
     let message: ChatMessage
+    
+    private var bubbleCorners: UIRectCorner {
+        message.isOwn
+            ? [.topLeft, .topRight, .bottomLeft]
+            : [.topLeft, .topRight, .bottomRight]
+    }
     
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -231,14 +248,10 @@ struct MessageBubbleView: View {
                 }
             }
             .padding(12)
-            .background(
-                message.isOwn
-                    ? AnyShapeStyle(LinearGradient(colors: [Theme.accent.opacity(0.12), Theme.accentBlue.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    : AnyShapeStyle(Theme.surface)
-            )
-            .cornerRadius(12, corners: message.isOwn ? [.topLeading, .topTrailing, .bottomLeading] : [.topLeading, .topTrailing, .bottomTrailing])
+            .background(bubbleBackground)
+            .clipShape(RoundedCorner(radius: 12, corners: bubbleCorners))
             .overlay(
-                RoundedCorner(radius: 12, corners: message.isOwn ? [.topLeading, .topTrailing, .bottomLeading] : [.topLeading, .topTrailing, .bottomTrailing])
+                RoundedCorner(radius: 12, corners: bubbleCorners)
                     .stroke(message.isOwn ? Theme.borderAccent : Theme.border)
             )
             
@@ -248,6 +261,18 @@ struct MessageBubbleView: View {
             insertion: .scale(scale: 0.95).combined(with: .opacity),
             removal: .opacity
         ))
+    }
+    
+    @ViewBuilder
+    private var bubbleBackground: some View {
+        if message.isOwn {
+            LinearGradient(
+                colors: [Theme.accent.opacity(0.12), Theme.accentBlue.opacity(0.08)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        } else {
+            Color.white.opacity(0.03)
+        }
     }
 }
 
@@ -299,11 +324,5 @@ struct RoundedCorner: Shape {
     func path(in rect: CGRect) -> Path {
         let path = UIBezierPath(roundedRect: rect, byRoundingCorners: corners, cornerRadii: CGSize(width: radius, height: radius))
         return Path(path.cgPath)
-    }
-}
-
-extension View {
-    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
-        clipShape(RoundedCorner(radius: radius, corners: corners))
     }
 }
