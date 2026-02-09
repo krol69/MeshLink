@@ -50,6 +50,7 @@ jobs:
           mkdir -p build/Payload
           cp -r build/MeshLink.xcarchive/Products/Applications/MeshLink.app build/Payload/
           cd build && zip -r MeshLink.ipa Payload
+          echo "IPA size: $(du -h MeshLink.ipa | cut -f1)"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
