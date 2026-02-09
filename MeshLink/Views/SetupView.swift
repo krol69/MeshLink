@@ -18,7 +18,6 @@ struct SetupView: View {
                     Image(systemName: "antenna.radiowaves.left.and.right")
                         .font(.system(size: 44))
                         .foregroundStyle(Theme.gradient)
-                        .symbolEffect(.pulse)
                     
                     Text("MESHLINK")
                         .font(.system(size: 38, weight: .black, design: .default))
@@ -98,29 +97,7 @@ struct SetupView: View {
                     }
                     
                     // Join Button
-                    Button(action: vm.joinMesh) {
-                        HStack(spacing: 10) {
-                            Text("JOIN MESH")
-                                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                .tracking(1)
-                            Image(systemName: "arrow.right")
-                                .font(.system(size: 13, weight: .bold))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .background(
-                            vm.username.trimmingCharacters(in: .whitespaces).isEmpty
-                                ? AnyShapeStyle(Color.white.opacity(0.04))
-                                : AnyShapeStyle(Theme.gradient)
-                        )
-                        .foregroundColor(
-                            vm.username.trimmingCharacters(in: .whitespaces).isEmpty
-                                ? Theme.textMuted
-                                : Theme.bg0
-                        )
-                        .cornerRadius(8)
-                    }
-                    .disabled(vm.username.trimmingCharacters(in: .whitespaces).isEmpty)
+                    joinButton
                 }
                 .padding(24)
                 .background(Theme.bg1)
@@ -155,5 +132,45 @@ struct SetupView: View {
             }
         }
         .onAppear { focusField = .name }
+    }
+    
+    private var canJoin: Bool {
+        !vm.username.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+    
+    @ViewBuilder
+    private var joinButton: some View {
+        if canJoin {
+            Button(action: vm.joinMesh) {
+                HStack(spacing: 10) {
+                    Text("JOIN MESH")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .tracking(1)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background(Theme.gradient)
+                .foregroundColor(Theme.bg0)
+                .cornerRadius(8)
+            }
+        } else {
+            Button(action: {}) {
+                HStack(spacing: 10) {
+                    Text("JOIN MESH")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .tracking(1)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background(Color.white.opacity(0.04))
+                .foregroundColor(Theme.textMuted)
+                .cornerRadius(8)
+            }
+            .disabled(true)
+        }
     }
 }
