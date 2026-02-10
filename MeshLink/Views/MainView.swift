@@ -27,6 +27,11 @@ struct MainView: View {
             }
             .edgesIgnoringSafeArea(.bottom)
         }
+        .sheet(isPresented: $vm.showQRScanner) {
+            QRScannerView(isPresented: $vm.showQRScanner) { key in
+                vm.handleScannedKey(key)
+            }
+        }
     }
     
     // MARK: - Header
@@ -67,14 +72,17 @@ struct MainView: View {
             
             HStack(spacing: 6) {
                 headerBtn(icon: "qrcode", active: vm.showKeyShare) {
+                    vm.haptic.tap()
                     vm.showKeyShare.toggle()
                     vm.showAbout = false; vm.showSettings = false
                 }
                 headerBtn(icon: "info.circle", active: vm.showAbout) {
+                    vm.haptic.tap()
                     vm.showAbout.toggle()
                     vm.showSettings = false; vm.showKeyShare = false
                 }
                 headerBtn(icon: vm.showSettings ? "xmark" : "gearshape", active: vm.showSettings) {
+                    vm.haptic.tap()
                     vm.showSettings.toggle()
                     vm.showAbout = false; vm.showKeyShare = false
                 }
@@ -98,7 +106,7 @@ struct MainView: View {
         }
     }
     
-    // MARK: - Key Share Panel (QR + NFC)
+    // MARK: - Key Share Panel (QR + NFC + Scanner)
     private var keySharePanel: some View {
         VStack(spacing: 12) {
             Text("SHARE ENCRYPTION KEY")
@@ -122,6 +130,22 @@ struct MainView: View {
                 Text("Set an encryption key first")
                     .font(.system(size: 11))
                     .foregroundColor(Theme.textMuted)
+            }
+            
+            // Fix #5: Scan QR button
+            Button {
+                vm.haptic.tap()
+                vm.showQRScanner = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "camera.fill").font(.system(size: 11))
+                    Text("Scan QR Code").font(.system(size: 10, weight: .semibold, design: .monospaced))
+                }
+                .foregroundColor(Theme.accent)
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .background(Theme.accent.opacity(0.08))
+                .cornerRadius(7)
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.borderAccent))
             }
             
             if vm.nfc.isAvailable {
@@ -177,7 +201,7 @@ struct MainView: View {
                 Image(systemName: "antenna.radiowaves.left.and.right")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.gradient)
-                Text("MeshLink v3.0.0")
+                Text("MeshLink v3.1.0")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(Theme.text1)
             }
@@ -186,7 +210,7 @@ struct MainView: View {
                 featureRow(icon: "lock.fill", text: "AES-256-GCM end-to-end encryption")
                 featureRow(icon: "point.3.connected.trianglepath.dotted", text: "Mesh relay — messages hop between peers")
                 featureRow(icon: "wave.3.right", text: "NFC key sharing — tap to pair")
-                featureRow(icon: "qrcode", text: "QR code key exchange")
+                featureRow(icon: "qrcode", text: "QR code key exchange (scan & generate)")
                 featureRow(icon: "photo", text: "Image sharing over Bluetooth")
                 featureRow(icon: "bell.fill", text: "Background notifications")
                 featureRow(icon: "arrow.triangle.2.circlepath", text: "Auto-reconnect to known peers")
@@ -231,6 +255,13 @@ struct MainView: View {
                     .foregroundColor(Theme.text1)
                     .textFieldStyle(.plain)
                     .autocorrectionDisabled()
+                    .onChange(of: vm.encryptionKey) { _ in
+                        // Re-derive key on change
+                        if !vm.encryptionKey.isEmpty {
+                            vm.crypto.deriveKey(from: vm.encryptionKey)
+                            vm.encryptionEnabled = true
+                        }
+                    }
                     
                     Button { vm.showKey.toggle() } label: {
                         Image(systemName: vm.showKey ? "eye.slash" : "eye")
@@ -249,12 +280,21 @@ struct MainView: View {
             }
             
             HStack(spacing: 6) {
-                settingsBtn(icon: vm.encryptionEnabled ? "lock.fill" : "lock.open",
-                           label: vm.encryptionEnabled ? "AES-GCM" : "Off",
-                           active: vm.encryptionEnabled,
-                           color: vm.encryptionEnabled ? Theme.accent : Theme.danger) {
-                    vm.encryptionEnabled.toggle()
-                    vm.addLog("Encryption \(vm.encryptionEnabled ? "on" : "off")", .info)
+                // Fix #4: Show correct encryption state
+                settingsBtn(icon: vm.isEncryptionActive ? "lock.fill" : "lock.open",
+                           label: vm.isEncryptionActive ? "AES-GCM" : (vm.encryptionKey.isEmpty ? "No Key" : "Off"),
+                           active: vm.isEncryptionActive,
+                           color: vm.isEncryptionActive ? Theme.accent : Theme.danger) {
+                    if vm.encryptionKey.isEmpty {
+                        vm.addLog("Set an encryption key first", .warning)
+                        vm.haptic.error()
+                    } else {
+                        vm.encryptionEnabled.toggle()
+                        if vm.encryptionEnabled {
+                            vm.crypto.deriveKey(from: vm.encryptionKey)
+                        }
+                        vm.addLog("Encryption \(vm.encryptionEnabled ? "on" : "off")", .info)
+                    }
                 }
                 
                 settingsBtn(icon: vm.soundEnabled ? "speaker.wave.2" : "speaker.slash",
@@ -318,7 +358,8 @@ struct MainView: View {
     
     private func tabBtn(icon: String, label: String, tab: MeshViewModel.AppTab, badge: Int) -> some View {
         Button {
-            vm.activeTab = tab
+            vm.haptic.selection()  // Fix #7
+            vm.activeTab = tab  // Fix #3: panels close via didSet
             if tab == .chat { vm.unreadCount = 0; vm.notifications.clearBadge() }
         } label: {
             HStack(spacing: 5) {

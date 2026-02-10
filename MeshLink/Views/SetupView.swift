@@ -96,26 +96,38 @@ struct SetupView: View {
                             .cornerRadius(8)
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
                             
-                            // NFC + hint
+                            // NFC + QR Scanner + hint
                             HStack(spacing: 6) {
                                 if vm.nfc.isAvailable {
                                     Button(action: vm.readKeyFromNFC) {
                                         HStack(spacing: 4) {
-                                            Image(systemName: "wave.3.right")
-                                                .font(.system(size: 9))
-                                            Text("NFC")
-                                                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                            Image(systemName: "wave.3.right").font(.system(size: 9))
+                                            Text("NFC").font(.system(size: 9, weight: .semibold, design: .monospaced))
                                         }
                                         .foregroundColor(Theme.accentBlue)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
+                                        .padding(.horizontal, 10).padding(.vertical, 6)
                                         .background(Theme.accentBlue.opacity(0.08))
                                         .cornerRadius(5)
                                         .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.accentBlue.opacity(0.2)))
                                     }
                                 }
                                 
-                                Text("or type same key on both devices")
+                                // Fix #5: QR scan on setup screen too
+                                Button {
+                                    vm.showQRScanner = true
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "qrcode.viewfinder").font(.system(size: 9))
+                                        Text("Scan QR").font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                    }
+                                    .foregroundColor(Theme.accent)
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Theme.accent.opacity(0.08))
+                                    .cornerRadius(5)
+                                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.borderAccent))
+                                }
+                                
+                                Text("or type same key")
                                     .font(.system(size: 9))
                                     .foregroundColor(Theme.textMuted)
                             }
@@ -144,7 +156,6 @@ struct SetupView: View {
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.border))
                     .padding(.horizontal, 18)
                     
-                    // Bluetooth warning
                     if !vm.bluetoothReady {
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "exclamationmark.triangle")
@@ -162,7 +173,6 @@ struct SetupView: View {
                         .padding(.top, 12)
                     }
                     
-                    // NFC status
                     if let status = vm.nfc.statusMessage {
                         Text(status)
                             .font(.system(size: 10, design: .monospaced))
@@ -170,7 +180,7 @@ struct SetupView: View {
                             .padding(.top, 10)
                     }
                     
-                    Text("No servers. No internet. Just Bluetooth. v3.0.0")
+                    Text("No servers. No internet. Just Bluetooth. v3.1.0")
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundColor(Theme.textMuted)
                         .padding(.top, 16)
@@ -179,6 +189,11 @@ struct SetupView: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
+        }
+        .sheet(isPresented: $vm.showQRScanner) {
+            QRScannerView(isPresented: $vm.showQRScanner) { key in
+                vm.handleScannedKey(key)
+            }
         }
         .onAppear { focusField = .name }
     }

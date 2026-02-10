@@ -5,6 +5,8 @@ struct ChatView: View {
     @EnvironmentObject var vm: MeshViewModel
     @FocusState private var inputFocused: Bool
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var showScrollButton = false  // Fix #12
+    @State private var isNearBottom = true
     
     var body: some View {
         VStack(spacing: 0) {
@@ -13,9 +15,7 @@ struct ChatView: View {
                 Text("\(vm.messages.count) message\(vm.messages.count == 1 ? "" : "s")")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(Theme.textMuted)
-                
                 Spacer()
-                
                 if !vm.messages.isEmpty {
                     Button(action: vm.clearChat) {
                         HStack(spacing: 3) {
@@ -32,36 +32,98 @@ struct ChatView: View {
             .background(Theme.bg0.opacity(0.4))
             
             // Messages
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 5) {
-                        if vm.messages.isEmpty {
-                            emptyState
-                        } else {
-                            ForEach(vm.messages) { msg in
-                                MessageBubbleView(message: msg).id(msg.id)
+            ZStack(alignment: .bottomTrailing) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 5) {
+                            if vm.messages.isEmpty {
+                                emptyState
+                            } else {
+                                ForEach(Array(vm.messages.enumerated()), id: \.element.id) { index, msg in
+                                    // Fix #10: Date separator
+                                    if shouldShowDateSeparator(at: index) {
+                                        dateSeparator(label: msg.dateSectionLabel)
+                                    }
+                                    MessageBubbleView(message: msg).id(msg.id)
+                                }
                             }
+                            
+                            ForEach(Array(vm.typingPeers), id: \.self) { name in
+                                TypingView(name: name)
+                            }
+                            
+                            Color.clear.frame(height: 1).id("bottom")
                         }
-                        
-                        ForEach(Array(vm.typingPeers), id: \.self) { name in
-                            TypingView(name: name)
-                        }
-                        
-                        Color.clear.frame(height: 1).id("bottom")
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(GeometryReader { geo in
+                            Color.clear.preference(key: ScrollOffsetKey.self, value: geo.frame(in: .named("scroll")).maxY)
+                        })
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .coordinateSpace(name: "scroll")
+                    .onPreferenceChange(ScrollOffsetKey.self) { maxY in
+                        // Fix #12: Show/hide scroll button based on position
+                        let threshold: CGFloat = 600
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showScrollButton = maxY > threshold && vm.messages.count > 5
+                        }
+                        isNearBottom = maxY <= threshold
+                    }
+                    .onChange(of: vm.messages.count) { _ in
+                        if isNearBottom {
+                            withAnimation { proxy.scrollTo("bottom") }
+                        }
+                    }
+                    .onChange(of: vm.typingPeers) { _ in
+                        if isNearBottom {
+                            withAnimation { proxy.scrollTo("bottom") }
+                        }
+                    }
+                    .onTapGesture { inputFocused = false }
+                    
+                    // Fix #12: Scroll to bottom button
+                    if showScrollButton {
+                        Button {
+                            vm.haptic.tap()
+                            withAnimation { proxy.scrollTo("bottom") }
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Theme.accent)
+                                .frame(width: 36, height: 36)
+                                .background(Theme.bg1.opacity(0.95))
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Theme.borderAccent))
+                                .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                        }
+                        .padding(.trailing, 12)
+                        .padding(.bottom, 8)
+                        .transition(.scale.combined(with: .opacity))
+                    }
                 }
-                .onChange(of: vm.messages.count) { _ in
-                    withAnimation { proxy.scrollTo("bottom") }
-                }
-                .onChange(of: vm.typingPeers) { _ in
-                    withAnimation { proxy.scrollTo("bottom") }
-                }
-                .onTapGesture { inputFocused = false }
             }
             
             inputBar
         }
+    }
+    
+    // MARK: - Fix #10: Date Separator
+    private func shouldShowDateSeparator(at index: Int) -> Bool {
+        guard index > 0 else { return true }
+        let current = vm.messages[index].timestamp
+        let previous = vm.messages[index - 1].timestamp
+        return !Calendar.current.isDate(current, inSameDayAs: previous)
+    }
+    
+    private func dateSeparator(label: String) -> some View {
+        HStack {
+            Rectangle().fill(Theme.border).frame(height: 1)
+            Text(label)
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundColor(Theme.textMuted)
+                .padding(.horizontal, 8)
+            Rectangle().fill(Theme.border).frame(height: 1)
+        }
+        .padding(.vertical, 8)
     }
     
     // MARK: - Empty State
@@ -96,11 +158,10 @@ struct ChatView: View {
         }
     }
     
-    // MARK: - Input Bar
+    // MARK: - Input Bar (Fix #4: encryption status)
     private var inputBar: some View {
         VStack(spacing: 4) {
             HStack(spacing: 6) {
-                // Image picker
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
                     Image(systemName: "photo")
                         .font(.system(size: 14))
@@ -143,15 +204,15 @@ struct ChatView: View {
                 .disabled(vm.inputText.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             
-            // Status bar
+            // Fix #4: Status bar shows correct encryption state
             HStack {
                 HStack(spacing: 4) {
-                    Image(systemName: vm.encryptionEnabled ? "lock.fill" : "lock.open")
+                    Image(systemName: vm.isEncryptionActive ? "lock.fill" : "lock.open")
                         .font(.system(size: 8))
-                        .foregroundColor(vm.encryptionEnabled ? Theme.accent : Theme.danger)
-                    Text(vm.encryptionEnabled ? "AES-256-GCM" : "Unencrypted")
+                        .foregroundColor(vm.isEncryptionActive ? Theme.accent : Theme.danger)
+                    Text(vm.isEncryptionActive ? "AES-256-GCM" : (vm.encryptionKey.isEmpty ? "No encryption" : "Encryption off"))
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(vm.encryptionEnabled ? Theme.accent.opacity(0.4) : Theme.danger.opacity(0.4))
+                        .foregroundColor(vm.isEncryptionActive ? Theme.accent.opacity(0.4) : Theme.danger.opacity(0.4))
                 }
                 Spacer()
                 Text("\(vm.ble.connectedCount) peer\(vm.ble.connectedCount == 1 ? "" : "s") • Mesh relay on")
@@ -179,6 +240,14 @@ struct ChatView: View {
             .overlay(Group {
                 if isEmpty { RoundedRectangle(cornerRadius: 10).stroke(Theme.border) }
             })
+    }
+}
+
+// MARK: - Scroll offset preference key (Fix #12)
+struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
