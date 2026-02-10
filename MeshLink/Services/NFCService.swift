@@ -56,13 +56,10 @@ final class NFCService: NSObject, ObservableObject {
     
     // MARK: - Create NDEF Message
     private func createNDEFMessage(key: String) -> NFCNDEFMessage {
-        // Store as a custom MeshLink record + a URI for cross-platform
         let meshLinkPayload = "meshlink://key/\(key)"
         
-        // URI record
         let uriPayload = NFCNDEFPayload.wellKnownTypeURIPayload(string: meshLinkPayload)!
         
-        // Text record with the raw key
         let textPayload = NFCNDEFPayload.wellKnownTypeTextPayload(
             string: "MeshLink Key: \(key)",
             locale: Locale(identifier: "en")
@@ -81,12 +78,12 @@ final class NFCService: NSObject, ObservableObject {
                 }
             }
             
-            // Try text record
-            if let (text, _) = record.wellKnownTypeTextPayload() {
+            // Try text record — wellKnownTypeTextPayload returns (String?, Locale?) not Optional
+            let (text, _) = record.wellKnownTypeTextPayload()
+            if let text = text {
                 if text.hasPrefix("MeshLink Key: ") {
                     return String(text.dropFirst("MeshLink Key: ".count))
                 }
-                // If it's just a plain key string
                 if !text.isEmpty && !text.contains(" ") {
                     return text
                 }
@@ -117,7 +114,6 @@ extension NFCService: NFCNDEFReaderSessionDelegate {
     }
     
     func readerSession(_ session: NFCNDEFReaderSession, didDetectNDEFs messages: [NFCNDEFMessage]) {
-        // Read mode — extract key from first message
         guard let message = messages.first, let key = extractKey(from: message) else {
             DispatchQueue.main.async { [weak self] in
                 self?.statusMessage = "No MeshLink key found on tag"
