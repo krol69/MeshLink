@@ -12,13 +12,13 @@ settings:
     TARGETED_DEVICE_FAMILY: "1,2"
     INFOPLIST_FILE: MeshLink/Info.plist
     PRODUCT_BUNDLE_IDENTIFIER: com.meshlink.app
-    MARKETING_VERSION: "3.0.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "3.1.0"
+    CURRENT_PROJECT_VERSION: "2"
     CODE_SIGN_STYLE: Automatic
     GENERATE_INFOPLIST_FILE: false
     ENABLE_BITCODE: false
     ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: false
-    ASSETCATALOG_COMPILER_APPICON_NAME: ""
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     CODE_SIGN_ENTITLEMENTS: MeshLink/MeshLink.entitlements
 
 targets:
@@ -27,8 +27,9 @@ targets:
     platform: iOS
     sources:
       - path: MeshLink
-        excludes:
-          - "Assets.xcassets"
+        excludes: []
+    resources:
+      - path: MeshLink/Assets.xcassets
     settings:
       base:
         PRODUCT_NAME: MeshLink
@@ -44,3 +45,4 @@ targets:
         NSBluetoothPeripheralUsageDescription: "MeshLink uses Bluetooth to communicate with nearby peers."
         NFCReaderUsageDescription: "MeshLink uses NFC to securely share encryption keys between devices by tapping."
         NSPhotoLibraryUsageDescription: "MeshLink can send photos to connected peers over encrypted Bluetooth."
+        NSCameraUsageDescription: "MeshLink uses the camera to scan QR codes for sharing encryption keys."
