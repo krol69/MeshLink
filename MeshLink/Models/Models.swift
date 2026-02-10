@@ -38,8 +38,33 @@ struct ChatMessage: Identifiable, Codable, Equatable {
         return UIImage(data: data)
     }
     
+    // Fix #10: date section label
+    var dateSectionLabel: String {
+        let cal = Calendar.current
+        if cal.isDateInToday(timestamp) { return "Today" }
+        if cal.isDateInYesterday(timestamp) { return "Yesterday" }
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMM d"
+        return f.string(from: timestamp)
+    }
+    
     static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
         lhs.id == rhs.id && lhs.delivered == rhs.delivered
+    }
+}
+
+// Extended ChatMessage init with explicit ID (for ACK tracking)
+extension ChatMessage {
+    init(id: String, sender: String, text: String, timestamp: Date, isOwn: Bool, encrypted: Bool, method: String, delivered: Bool, imageData: Data? = nil) {
+        self.id = id
+        self.sender = sender
+        self.text = text
+        self.timestamp = timestamp
+        self.isOwn = isOwn
+        self.encrypted = encrypted
+        self.method = method
+        self.delivered = delivered
+        self.imageData = imageData
     }
 }
 
@@ -80,14 +105,25 @@ struct ChunkEnvelope: Codable {
     let data: String // base64 chunk
 }
 
-// MARK: - Peer Model
+// MARK: - Peer Model (Fix #11: added connecting state)
 struct BLEPeer: Identifiable, Equatable {
     let id: String
     var name: String
     var connected: Bool
+    var connecting: Bool    // Fix #11: show spinner while connecting
     var rssi: Int
     var lastSeen: Date
     var isMeshLink: Bool
+    
+    init(id: String, name: String, connected: Bool = false, connecting: Bool = false, rssi: Int = -100, lastSeen: Date = Date(), isMeshLink: Bool = false) {
+        self.id = id
+        self.name = name
+        self.connected = connected
+        self.connecting = connecting
+        self.rssi = rssi
+        self.lastSeen = lastSeen
+        self.isMeshLink = isMeshLink
+    }
     
     var signalStrength: String {
         if rssi > -50 { return "Strong" }
@@ -97,7 +133,7 @@ struct BLEPeer: Identifiable, Equatable {
     }
     
     static func == (lhs: BLEPeer, rhs: BLEPeer) -> Bool {
-        lhs.id == rhs.id && lhs.connected == rhs.connected && lhs.name == rhs.name && lhs.isMeshLink == rhs.isMeshLink
+        lhs.id == rhs.id && lhs.connected == rhs.connected && lhs.connecting == rhs.connecting && lhs.name == rhs.name && lhs.isMeshLink == rhs.isMeshLink
     }
 }
 
