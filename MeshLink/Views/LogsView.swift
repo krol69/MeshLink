@@ -7,48 +7,48 @@ struct LogsView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("\(vm.logs.count) events")
-                    .font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.textMuted)
+                    .font(.system(size: 9, design: .monospaced)).foregroundColor(Theme.textMuted)
                 Spacer()
                 Button {
                     vm.logs.removeAll()
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "trash").font(.system(size: 10))
-                        Text("Clear").font(.system(size: 10, weight: .medium, design: .monospaced))
+                    HStack(spacing: 3) {
+                        Image(systemName: "trash").font(.system(size: 9))
+                        Text("Clear").font(.system(size: 9, weight: .medium, design: .monospaced))
                     }
                     .foregroundColor(Theme.text2)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border))
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.border))
                 }
             }
-            .padding(.horizontal, 18).padding(.vertical, 6)
+            .padding(.horizontal, 16).padding(.vertical, 4)
             .background(Theme.bg0.opacity(0.4))
-            .overlay(Rectangle().frame(height: 1).foregroundColor(Color.white.opacity(0.02)), alignment: .bottom)
             
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 3) {
+                    LazyVStack(alignment: .leading, spacing: 2) {
                         ForEach(vm.logs) { log in
-                            HStack(alignment: .top, spacing: 8) {
+                            HStack(alignment: .top, spacing: 6) {
                                 Text(log.timeString)
-                                    .font(.system(size: 10, design: .monospaced))
+                                    .font(.system(size: 9, design: .monospaced))
                                     .foregroundColor(Theme.textMuted)
-                                    .frame(width: 60, alignment: .leading)
+                                    .frame(width: 55, alignment: .leading)
                                 
                                 Circle()
                                     .fill(logColor(log.level))
-                                    .frame(width: 5, height: 5)
+                                    .frame(width: 4, height: 4)
                                     .padding(.top, 4)
                                 
                                 Text(log.text)
-                                    .font(.system(size: 11, design: .monospaced))
+                                    .font(.system(size: 10, design: .monospaced))
                                     .foregroundColor(logColor(log.level).opacity(0.8))
                                     .lineSpacing(2)
                             }
                             .id(log.id)
                         }
                     }
-                    .padding(14)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .padding(.bottom, 30)
                 }
                 .onChange(of: vm.logs.count) { _ in
                     if let last = vm.logs.last {
