@@ -129,7 +129,7 @@ final class MeshViewModel: ObservableObject {
         
         // Relay to other peers (mesh hop) if TTL > 0
         if let ttl = wire.ttl, ttl > 0, wire.type == "msg" || wire.type == "img" {
-            var relayWire = WireMessage(
+            let relayWire = WireMessage(
                 type: wire.type, sender: wire.sender, text: wire.text,
                 id: wire.id, ttl: ttl - 1, originId: wire.originId,
                 imgData: wire.imgData, imgThumb: wire.imgThumb
@@ -175,7 +175,7 @@ final class MeshViewModel: ObservableObject {
                 let decrypted = encryptionEnabled ? crypto.decrypt(imgStr) : imgStr
                 imageData = Data(base64Encoded: decrypted)
             }
-            let thumb = wire.imgThumb ?? ""
+            let _ = wire.imgThumb // thumbnail reserved for future use
             let text = wire.text ?? (imageData != nil ? "📷 Image" : "")
             let msg = ChatMessage(sender: sender, text: text, encrypted: encryptionEnabled, method: "BLE", imageData: imageData)
             DispatchQueue.main.async { [weak self] in
