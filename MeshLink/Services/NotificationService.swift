@@ -37,6 +37,6 @@ final class NotificationService {
     }
     
     func clearBadge() {
-        UNUserNotificationCenter.current().setBadgeCount(0, withCompletionHandler: nil)
+        UNUserNotificationCenter.current().setBadgeCount(0)
     }
 }
