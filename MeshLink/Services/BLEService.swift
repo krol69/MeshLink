@@ -2,7 +2,7 @@ import Foundation
 import CoreBluetooth
 import Combine
 
-// MARK: - BLE Service Manager v3
+// MARK: - BLE Service Manager v3.1
 final class BLEService: NSObject, ObservableObject {
     static let shared = BLEService()
     
@@ -35,8 +35,8 @@ final class BLEService: NSObject, ObservableObject {
     private let chunkTimeout: TimeInterval = 0.15
     
     // Large message chunked reassembly (sequence-based)
-    private var messageChunkBuffers: [String: [Int: String]] = [:] // msgId -> [seq: data]
-    private var messageChunkExpected: [String: Int] = [:]           // msgId -> total
+    private var messageChunkBuffers: [String: [Int: String]] = [:]
+    private var messageChunkExpected: [String: Int] = [:]
     private var messageChunkTimers: [String: Timer] = [:]
     
     // Mesh relay
@@ -100,7 +100,6 @@ final class BLEService: NSObject, ObservableObject {
         if showMeshLinkOnly {
             return peers.filter { $0.isMeshLink || $0.connected }
         }
-        // Sort: MeshLink first, then connected, then by signal
         return peers.sorted { a, b in
             if a.isMeshLink != b.isMeshLink { return a.isMeshLink }
             if a.connected != b.connected { return a.connected }
@@ -116,18 +115,21 @@ final class BLEService: NSObject, ObservableObject {
         guard peripheral.state != .connected && peripheral.state != .connecting else {
             onLog?("Already connected/connecting", .warning); return
         }
+        // Fix #11: Mark as connecting (shows spinner on peer card)
+        updatePeer(id: peerId, connected: false, connecting: true)
         onLog?("Connecting to \(peripheral.name ?? "device")...", .info)
         peripheral.delegate = self
         centralManager.connect(peripheral, options: [
             CBConnectPeripheralOptionNotifyOnConnectionKey: true,
             CBConnectPeripheralOptionNotifyOnDisconnectionKey: true
         ])
+        // 10s timeout
         connectionTimers[peerId]?.invalidate()
         connectionTimers[peerId] = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
             guard let self = self, let p = self.discoveredPeripherals[peerId], p.state != .connected else { return }
             self.centralManager.cancelPeripheralConnection(p)
             self.onLog?("Connection timed out", .warning)
-            self.updatePeer(id: peerId, connected: false)
+            self.updatePeer(id: peerId, connected: false, connecting: false)
             self.connectionTimers.removeValue(forKey: peerId)
         }
     }
@@ -136,8 +138,7 @@ final class BLEService: NSObject, ObservableObject {
         guard let peripheral = discoveredPeripherals[peerId] else { return }
         cleanup(peerId: peerId)
         centralManager.cancelPeripheralConnection(peripheral)
-        updatePeer(id: peerId, connected: false)
-        // Remove from auto-reconnect
+        updatePeer(id: peerId, connected: false, connecting: false)
         var known = knownPeerUUIDs; known.remove(peerId); knownPeerUUIDs = known
         onLog?("Disconnected from \(peerName(for: peerId))", .warning)
         onPeerDisconnected?(peerName(for: peerId))
@@ -149,7 +150,7 @@ final class BLEService: NSObject, ObservableObject {
             cleanup(peerId: id)
         }
         connectedCharacteristics.removeAll()
-        peers = peers.map { var p = $0; p.connected = false; return p }
+        peers = peers.map { var p = $0; p.connected = false; p.connecting = false; return p }
         knownPeerUUIDs = []
     }
     
@@ -173,7 +174,8 @@ final class BLEService: NSObject, ObservableObject {
         guard centralManager.state == .poweredOn else { return }
         for uuid in knownPeerUUIDs {
             if let peripheral = discoveredPeripherals[uuid],
-               peripheral.state == .disconnected {
+               peripheral.state == .disconnected,
+               meshLinkPeerIds.contains(uuid) {
                 onLog?("Auto-reconnecting to \(peerName(for: uuid))...", .info)
                 connect(peerId: uuid)
             }
@@ -183,7 +185,6 @@ final class BLEService: NSObject, ObservableObject {
     // MARK: - Send (with chunking for large messages)
     func broadcast(_ data: Data, excludePeerId: String? = nil) {
         var sentCount = 0
-        // If data > 180 bytes, use sequenced chunking
         if data.count > 180 {
             broadcastChunked(data, excludePeerId: excludePeerId)
             return
@@ -226,7 +227,6 @@ final class BLEService: NSObject, ObservableObject {
             if let jsonData = try? JSONEncoder().encode(chunk),
                let jsonStr = String(data: jsonData, encoding: .utf8),
                let sendData = ("{\"chunk\":" + jsonStr + "}").data(using: .utf8) {
-                // Small delay between chunks to prevent BLE overflow
                 DispatchQueue.main.asyncAfter(deadline: .now() + Double(seq) * 0.05) { [weak self] in
                     self?.broadcast(sendData, excludePeerId: excludePeerId)
                 }
@@ -236,17 +236,10 @@ final class BLEService: NSObject, ObservableObject {
     }
     
     // MARK: - Mesh Relay
-    func relayMessage(_ rawData: String, fromPeerId: String) {
-        // Re-broadcast to all peers except the sender
-        guard let data = rawData.data(using: .utf8) else { return }
-        broadcast(data, excludePeerId: fromPeerId)
-    }
-    
     func shouldProcess(messageId: String) -> Bool {
         if seenMessageIds.contains(messageId) { return false }
         seenMessageIds.insert(messageId)
         if seenMessageIds.count > maxSeenIds {
-            // Evict oldest (just clear half — simple approach)
             seenMessageIds = Set(Array(seenMessageIds).suffix(maxSeenIds / 2))
         }
         return true
@@ -285,10 +278,16 @@ final class BLEService: NSObject, ObservableObject {
         peers.first(where: { $0.id == id })?.name ?? "Unknown"
     }
     
-    private func updatePeer(id: String, connected: Bool) {
+    /// Fix #2: Only counts MeshLink-verified connected peers
+    var connectedCount: Int {
+        peers.filter { $0.connected && $0.isMeshLink }.count + subscribedCentrals.count
+    }
+    
+    private func updatePeer(id: String, connected: Bool, connecting: Bool = false) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let i = self.peers.firstIndex(where: { $0.id == id }) else { return }
             self.peers[i].connected = connected
+            self.peers[i].connecting = connecting
         }
     }
     
@@ -300,6 +299,17 @@ final class BLEService: NSObject, ObservableObject {
         }
     }
     
+    /// Fix #1: Auto-disconnect non-MeshLink device after service discovery
+    private func autoDisconnectNonMeshLink(peripheral: CBPeripheral) {
+        let id = peripheral.identifier.uuidString
+        let name = peripheral.name ?? "device"
+        centralManager.cancelPeripheralConnection(peripheral)
+        cleanup(peerId: id)
+        updatePeer(id: id, connected: false, connecting: false)
+        onLog?("\(name) — not MeshLink, disconnected", .warning)
+    }
+    
+    // MARK: - Incoming Data
     private func handleIncomingData(_ data: Data, from peerId: String) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -324,7 +334,6 @@ final class BLEService: NSObject, ObservableObject {
         buffer.timer?.invalidate()
         guard let raw = String(data: buffer.data, encoding: .utf8), !raw.isEmpty else { return }
         
-        // Check if this is a sequenced chunk envelope
         if raw.contains("\"chunk\":{") || raw.contains("\"chunk\":  {") {
             handleChunkEnvelope(raw, from: peerId)
             return
@@ -334,7 +343,6 @@ final class BLEService: NSObject, ObservableObject {
     }
     
     private func handleChunkEnvelope(_ raw: String, from peerId: String) {
-        // Extract the chunk JSON
         guard let data = raw.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let chunkJson = json["chunk"] as? [String: Any],
@@ -344,7 +352,6 @@ final class BLEService: NSObject, ObservableObject {
         if messageChunkBuffers[envelope.msgId] == nil {
             messageChunkBuffers[envelope.msgId] = [:]
             messageChunkExpected[envelope.msgId] = envelope.total
-            // Timeout for incomplete transfers
             messageChunkTimers[envelope.msgId] = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
                 self?.messageChunkBuffers.removeValue(forKey: envelope.msgId)
                 self?.messageChunkExpected.removeValue(forKey: envelope.msgId)
@@ -353,7 +360,6 @@ final class BLEService: NSObject, ObservableObject {
         }
         messageChunkBuffers[envelope.msgId]?[envelope.seq] = envelope.data
         
-        // Check if complete
         if let chunks = messageChunkBuffers[envelope.msgId],
            let total = messageChunkExpected[envelope.msgId],
            chunks.count == total {
@@ -368,10 +374,6 @@ final class BLEService: NSObject, ObservableObject {
                 onMessageReceived?(peerName(for: peerId), fullStr)
             }
         }
-    }
-    
-    var connectedCount: Int {
-        peers.filter(\.connected).count + subscribedCentrals.count
     }
 }
 
@@ -406,7 +408,6 @@ extension BLEService: CBCentralManagerDelegate {
         let id = peripheral.identifier.uuidString
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? "Device-\(String(id.prefix(8)))"
         
-        // Check if advertising our service
         let serviceUUIDs = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
         let isMesh = serviceUUIDs.contains(Self.serviceUUID) || meshLinkPeerIds.contains(id)
         
@@ -422,7 +423,7 @@ extension BLEService: CBCentralManagerDelegate {
                     self.peers[i].name = name
                 }
             } else {
-                self.peers.append(BLEPeer(id: id, name: name, connected: false, rssi: RSSI.intValue, lastSeen: Date(), isMeshLink: isMesh))
+                self.peers.append(BLEPeer(id: id, name: name, connected: false, connecting: false, rssi: RSSI.intValue, lastSeen: Date(), isMeshLink: isMesh))
                 if isMesh {
                     self.onLog?("Found MeshLink: \(name) (\(RSSI.intValue)dBm)", .success)
                 } else {
@@ -438,27 +439,28 @@ extension BLEService: CBCentralManagerDelegate {
         connectionTimers.removeValue(forKey: id)
         peripheral.delegate = self
         peripheral.discoverServices(nil)
-        updatePeer(id: id, connected: true)
-        // Save for auto-reconnect
-        var known = knownPeerUUIDs; known.insert(id); knownPeerUUIDs = known
-        onLog?("Connected to \(peripheral.name ?? "device")", .success)
-        onPeerConnected?(peerName(for: id))
+        // Stay in connecting state until service discovery confirms MeshLink
+        updatePeer(id: id, connected: true, connecting: true)
+        onLog?("Connected to \(peripheral.name ?? "device"), verifying...", .info)
     }
     
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         let id = peripheral.identifier.uuidString
         cleanup(peerId: id)
-        updatePeer(id: id, connected: false)
+        updatePeer(id: id, connected: false, connecting: false)
         onLog?("Connect failed: \(error?.localizedDescription ?? "unknown")", .error)
     }
     
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         let id = peripheral.identifier.uuidString
         let name = peerName(for: id)
+        let wasMeshLink = meshLinkPeerIds.contains(id)
         cleanup(peerId: id)
-        updatePeer(id: id, connected: false)
-        onLog?("\(name) disconnected\(error.map { ": \($0.localizedDescription)" } ?? "")", .warning)
-        onPeerDisconnected?(name)
+        updatePeer(id: id, connected: false, connecting: false)
+        if wasMeshLink {
+            onLog?("\(name) disconnected\(error.map { ": \($0.localizedDescription)" } ?? "")", .warning)
+            onPeerDisconnected?(name)
+        }
     }
 }
 
@@ -467,6 +469,8 @@ extension BLEService: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard error == nil, let services = peripheral.services else {
             if let e = error { onLog?("Service error: \(e.localizedDescription)", .error) }
+            // Fix #1: Service discovery failed — disconnect
+            autoDisconnectNonMeshLink(peripheral: peripheral)
             return
         }
         let id = peripheral.identifier.uuidString
@@ -479,8 +483,14 @@ extension BLEService: CBPeripheralDelegate {
         }
         if foundMeshLink {
             markAsMeshLink(id: id)
+            // Fix #11: Done connecting, now fully connected
+            updatePeer(id: id, connected: true, connecting: false)
+            // Save for auto-reconnect only if MeshLink
+            var known = knownPeerUUIDs; known.insert(id); knownPeerUUIDs = known
+            onPeerConnected?(peerName(for: id))
         } else {
-            onLog?("\(peripheral.name ?? "Device") — not a MeshLink device", .warning)
+            // Fix #1: Auto-disconnect non-MeshLink devices
+            autoDisconnectNonMeshLink(peripheral: peripheral)
         }
     }
     
@@ -512,9 +522,7 @@ extension BLEService: CBPeripheralManagerDelegate {
         if peripheral.state == .poweredOn { onLog?("Peripheral ready", .info) }
     }
     
-    func peripheralManager(_ peripheral: CBPeripheralManager, willRestoreState dict: [String: Any]) {
-        // Restore advertising state
-    }
+    func peripheralManager(_ peripheral: CBPeripheralManager, willRestoreState dict: [String: Any]) {}
     
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
         if !subscribedCentrals.contains(where: { $0.identifier == central.identifier }) {
