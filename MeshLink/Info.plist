@@ -17,9 +17,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>3.0.0</string>
+    <string>3.1.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>NSBluetoothAlwaysUsageDescription</key>
@@ -30,6 +30,8 @@
     <string>MeshLink uses NFC to securely share encryption keys between devices by tapping.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>MeshLink can send photos to connected peers over encrypted Bluetooth.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>MeshLink uses the camera to scan QR codes for sharing encryption keys.</string>
     <key>UIBackgroundModes</key>
     <array>
         <string>bluetooth-central</string>
