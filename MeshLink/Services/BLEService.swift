@@ -57,6 +57,9 @@ final class BLEService: NSObject, ObservableObject {
     // Track which peers are MeshLink
     private var meshLinkPeerIds: Set<String> = []
     
+    // FIX: Retry advertising when peripheral powers on after app launch
+    private var pendingAdvertisingName: String?
+    
     override init() {
         super.init()
         centralManager = CBCentralManager(
@@ -247,7 +250,11 @@ final class BLEService: NSObject, ObservableObject {
     
     // MARK: - Advertising
     func startAdvertising(name: String) {
-        guard peripheralManager.state == .poweredOn else { return }
+        pendingAdvertisingName = name
+        guard peripheralManager.state == .poweredOn else {
+            onLog?("Peripheral not ready — will retry when Bluetooth is on", .info)
+            return
+        }
         let characteristic = CBMutableCharacteristic(
             type: Self.charUUID,
             properties: [.read, .write, .writeWithoutResponse, .notify],
@@ -267,6 +274,7 @@ final class BLEService: NSObject, ObservableObject {
     }
     
     func stopAdvertising() {
+        pendingAdvertisingName = nil
         peripheralManager.stopAdvertising()
         peripheralManager.removeAllServices()
         subscribedCentrals.removeAll()
@@ -519,7 +527,13 @@ extension BLEService: CBPeripheralDelegate {
 // MARK: - CBPeripheralManagerDelegate
 extension BLEService: CBPeripheralManagerDelegate {
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
-        if peripheral.state == .poweredOn { onLog?("Peripheral ready", .info) }
+        if peripheral.state == .poweredOn {
+            onLog?("Peripheral ready", .info)
+            // FIX: Retry advertising that failed at launch
+            if let name = pendingAdvertisingName {
+                startAdvertising(name: name)
+            }
+        }
     }
     
     func peripheralManager(_ peripheral: CBPeripheralManager, willRestoreState dict: [String: Any]) {}
