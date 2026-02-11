@@ -3,19 +3,25 @@ import SwiftUI
 @main
 struct MeshLinkApp: App {
     @StateObject private var vm = MeshViewModel()
+    @StateObject private var accounts = AccountService.shared
     
     var body: some Scene {
         WindowGroup {
             Group {
-                if vm.isSetup {
-                    MainView()
+                if !accounts.isLoggedIn {
+                    LoginView()
+                        .environmentObject(vm)
+                } else if !vm.isSetup {
+                    SetupView()
                         .environmentObject(vm)
                 } else {
-                    SetupView()
+                    MainView()
                         .environmentObject(vm)
                 }
             }
             .preferredColorScheme(.dark)
+            .animation(.easeInOut(duration: 0.25), value: accounts.isLoggedIn)
+            .animation(.easeInOut(duration: 0.25), value: vm.isSetup)
         }
     }
 }
@@ -38,20 +44,15 @@ struct Theme {
     static let purple = Color(hex: "818CF8")
     
     static let gradient = LinearGradient(
-        colors: [accent, accentBlue],
-        startPoint: .topLeading, endPoint: .bottomTrailing
-    )
+        colors: [accent, accentBlue], startPoint: .topLeading, endPoint: .bottomTrailing)
     static let gradientFull = LinearGradient(
-        colors: [accent, accentBlue, purple],
-        startPoint: .topLeading, endPoint: .bottomTrailing
-    )
+        colors: [accent, accentBlue, purple], startPoint: .topLeading, endPoint: .bottomTrailing)
 }
 
 extension Color {
     init(hex: String) {
         let h = hex.trimmingCharacters(in: .alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: h).scanHexInt64(&int)
+        var int: UInt64 = 0; Scanner(string: h).scanHexInt64(&int)
         let r, g, b: UInt64
         switch h.count {
         case 6: (r, g, b) = ((int >> 16) & 0xFF, (int >> 8) & 0xFF, int & 0xFF)
@@ -65,7 +66,6 @@ extension String {
     var meshColor: Color {
         var hash: Int = 0
         for char in self.unicodeScalars { hash = Int(char.value) &+ ((hash << 5) &- hash) }
-        let hue = Double(abs(hash % 360)) / 360.0
-        return Color(hue: hue, saturation: 0.65, brightness: 0.65)
+        return Color(hue: Double(abs(hash % 360)) / 360.0, saturation: 0.65, brightness: 0.65)
     }
 }
