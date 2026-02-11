@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainView: View {
     @EnvironmentObject var vm: MeshViewModel
+    @ObservedObject var accounts = AccountService.shared
     
     var body: some View {
         ZStack {
@@ -25,12 +26,12 @@ struct MainView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .edgesIgnoringSafeArea(.bottom)
         }
         .sheet(isPresented: $vm.showQRScanner) {
-            QRScannerView(isPresented: $vm.showQRScanner) { key in
-                vm.handleScannedKey(key)
-            }
+            QRScannerView(isPresented: $vm.showQRScanner) { key in vm.handleScannedKey(key) }
+        }
+        .sheet(isPresented: $vm.showSessionsSheet) {
+            SessionsView().environmentObject(vm)
         }
     }
     
@@ -38,32 +39,45 @@ struct MainView: View {
     private var headerBar: some View {
         HStack {
             HStack(spacing: 10) {
-                Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 16))
-                    .foregroundStyle(Theme.gradient)
+                // Account avatar → opens sessions
+                Button {
+                    vm.haptic.tap(); vm.showSessionsSheet = true
+                } label: {
+                    if let account = accounts.currentAccount {
+                        Text(account.avatarEmoji)
+                            .font(.system(size: 16))
+                            .frame(width: 30, height: 30)
+                            .background(Theme.accent.opacity(0.1)).cornerRadius(8)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderAccent))
+                    } else {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.system(size: 16)).foregroundStyle(Theme.gradient)
+                    }
+                }
                 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("MESHLINK")
-                        .font(.system(size: 15, weight: .black))
-                        .foregroundStyle(Theme.gradient)
-                    
+                    HStack(spacing: 5) {
+                        Text("MESHLINK")
+                            .font(.system(size: 15, weight: .black))
+                            .foregroundStyle(Theme.gradient)
+                        if let session = accounts.activeSession {
+                            Text("• \(session.title)")
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .foregroundColor(Theme.accent.opacity(0.6)).lineLimit(1)
+                        }
+                    }
                     HStack(spacing: 5) {
                         Circle()
                             .fill(vm.ble.connectedCount > 0 ? Theme.accent : Theme.danger)
                             .frame(width: 5, height: 5)
                             .shadow(color: vm.ble.connectedCount > 0 ? Theme.accent : Theme.danger, radius: 2)
-                        
                         Text(vm.ble.connectedCount > 0
                              ? "\(vm.ble.connectedCount) peer\(vm.ble.connectedCount > 1 ? "s" : "")"
                              : "No peers")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(Theme.textMuted)
-                        
+                            .font(.system(size: 9, design: .monospaced)).foregroundColor(Theme.textMuted)
                         Text("|").foregroundColor(Theme.textMuted.opacity(0.4)).font(.system(size: 9))
-                        
                         Text(vm.username)
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(Theme.text2)
+                            .font(.system(size: 9, design: .monospaced)).foregroundColor(Theme.text2)
                     }
                 }
             }
@@ -72,24 +86,17 @@ struct MainView: View {
             
             HStack(spacing: 6) {
                 headerBtn(icon: "qrcode", active: vm.showKeyShare) {
-                    vm.haptic.tap()
-                    vm.showKeyShare.toggle()
-                    vm.showAbout = false; vm.showSettings = false
+                    vm.haptic.tap(); vm.showKeyShare.toggle(); vm.showAbout = false; vm.showSettings = false
                 }
                 headerBtn(icon: "info.circle", active: vm.showAbout) {
-                    vm.haptic.tap()
-                    vm.showAbout.toggle()
-                    vm.showSettings = false; vm.showKeyShare = false
+                    vm.haptic.tap(); vm.showAbout.toggle(); vm.showSettings = false; vm.showKeyShare = false
                 }
                 headerBtn(icon: vm.showSettings ? "xmark" : "gearshape", active: vm.showSettings) {
-                    vm.haptic.tap()
-                    vm.showSettings.toggle()
-                    vm.showAbout = false; vm.showKeyShare = false
+                    vm.haptic.tap(); vm.showSettings.toggle(); vm.showAbout = false; vm.showKeyShare = false
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16).padding(.vertical, 8)
         .background(Theme.bg1.opacity(0.95))
         .overlay(Rectangle().frame(height: 1).foregroundColor(Theme.border), alignment: .bottom)
     }
@@ -106,45 +113,33 @@ struct MainView: View {
         }
     }
     
-    // MARK: - Key Share Panel (QR + NFC + Scanner)
+    // MARK: - Key Share Panel
     private var keySharePanel: some View {
         VStack(spacing: 12) {
             Text("SHARE ENCRYPTION KEY")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundColor(Theme.accent)
-                .tracking(1.5)
+                .foregroundColor(Theme.accent).tracking(1.5)
             
             if let qrImage = vm.generateQRCode(for: vm.encryptionKey) {
                 Image(uiImage: qrImage)
-                    .interpolation(.none)
-                    .resizable()
-                    .scaledToFit()
+                    .interpolation(.none).resizable().scaledToFit()
                     .frame(width: 160, height: 160)
-                    .background(Color.white)
-                    .cornerRadius(10)
-                
+                    .background(Color.white).cornerRadius(10)
                 Text("Scan this QR code on another device")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(Theme.textMuted)
+                    .font(.system(size: 9, design: .monospaced)).foregroundColor(Theme.textMuted)
             } else {
                 Text("Set an encryption key first")
-                    .font(.system(size: 11))
-                    .foregroundColor(Theme.textMuted)
+                    .font(.system(size: 11)).foregroundColor(Theme.textMuted)
             }
             
-            // Fix #5: Scan QR button
-            Button {
-                vm.haptic.tap()
-                vm.showQRScanner = true
-            } label: {
+            Button { vm.haptic.tap(); vm.showQRScanner = true } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "camera.fill").font(.system(size: 11))
                     Text("Scan QR Code").font(.system(size: 10, weight: .semibold, design: .monospaced))
                 }
                 .foregroundColor(Theme.accent)
                 .padding(.horizontal, 16).padding(.vertical, 8)
-                .background(Theme.accent.opacity(0.08))
-                .cornerRadius(7)
+                .background(Theme.accent.opacity(0.08)).cornerRadius(7)
                 .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.borderAccent))
             }
             
@@ -157,11 +152,9 @@ struct MainView: View {
                         }
                         .foregroundColor(Theme.accentBlue)
                         .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(Theme.accentBlue.opacity(0.08))
-                        .cornerRadius(7)
+                        .background(Theme.accentBlue.opacity(0.08)).cornerRadius(7)
                         .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.accentBlue.opacity(0.2)))
                     }
-                    
                     Button(action: vm.writeKeyToNFC) {
                         HStack(spacing: 5) {
                             Image(systemName: "wave.3.left").font(.system(size: 11))
@@ -169,27 +162,21 @@ struct MainView: View {
                         }
                         .foregroundColor(Theme.purple)
                         .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(Theme.purple.opacity(0.08))
-                        .cornerRadius(7)
+                        .background(Theme.purple.opacity(0.08)).cornerRadius(7)
                         .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.purple.opacity(0.2)))
                     }
                 }
-                
                 Text("Write key to NFC tag, then tap other phone to read")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(Theme.textMuted)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                    .font(.system(size: 9, design: .monospaced)).foregroundColor(Theme.textMuted)
+                    .multilineTextAlignment(.center).lineLimit(2)
             }
             
             if let status = vm.nfc.statusMessage {
                 Text(status)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(Theme.accent)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundColor(Theme.accent)
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity)
+        .padding(16).frame(maxWidth: .infinity)
         .background(Theme.bg1.opacity(0.98))
         .overlay(Rectangle().frame(height: 1).foregroundColor(Theme.border), alignment: .bottom)
     }
@@ -199,37 +186,32 @@ struct MainView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.gradient)
-                Text("MeshLink v3.1.0")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(Theme.text1)
+                    .font(.system(size: 12)).foregroundStyle(Theme.gradient)
+                Text("MeshLink v3.2.0")
+                    .font(.system(size: 13, weight: .bold)).foregroundColor(Theme.text1)
             }
-            
             VStack(alignment: .leading, spacing: 4) {
+                featureRow(icon: "person.crop.circle.fill", text: "Account login with PIN protection")
+                featureRow(icon: "bubble.left.and.bubble.right.fill", text: "Multiple chat sessions — create, switch, archive")
                 featureRow(icon: "lock.fill", text: "AES-256-GCM end-to-end encryption")
                 featureRow(icon: "point.3.connected.trianglepath.dotted", text: "Mesh relay — messages hop between peers")
                 featureRow(icon: "wave.3.right", text: "NFC key sharing — tap to pair")
-                featureRow(icon: "qrcode", text: "QR code key exchange (scan & generate)")
+                featureRow(icon: "qrcode", text: "QR code key exchange")
                 featureRow(icon: "photo", text: "Image sharing over Bluetooth")
                 featureRow(icon: "bell.fill", text: "Background notifications")
                 featureRow(icon: "arrow.triangle.2.circlepath", text: "Auto-reconnect to known peers")
             }
-            
             Text("No servers • No internet • No third parties")
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(Theme.textMuted)
+                .font(.system(size: 9, design: .monospaced)).foregroundColor(Theme.textMuted)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.bg1.opacity(0.98))
         .overlay(Rectangle().frame(height: 1).foregroundColor(Theme.border), alignment: .bottom)
     }
     
     private func featureRow(icon: String, text: String) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 9)).foregroundColor(Theme.accent)
-                .frame(width: 14)
+            Image(systemName: icon).font(.system(size: 9)).foregroundColor(Theme.accent).frame(width: 14)
             Text(text).font(.system(size: 10)).foregroundColor(Theme.text2)
         }
     }
@@ -237,32 +219,26 @@ struct MainView: View {
     // MARK: - Settings Panel
     private var settingsPanel: some View {
         VStack(spacing: 10) {
+            // Encryption key field
             VStack(alignment: .leading, spacing: 3) {
                 Text("ENCRYPTION KEY")
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .foregroundColor(Theme.accent)
-                    .tracking(1.5)
-                
+                    .foregroundColor(Theme.accent).tracking(1.5)
                 HStack(spacing: 4) {
                     Group {
-                        if vm.showKey {
-                            TextField("Key", text: $vm.encryptionKey)
-                        } else {
-                            SecureField("Key", text: $vm.encryptionKey)
-                        }
+                        if vm.showKey { TextField("Key", text: $vm.encryptionKey) }
+                        else { SecureField("Key", text: $vm.encryptionKey) }
                     }
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(Theme.text1)
                     .textFieldStyle(.plain)
                     .autocorrectionDisabled()
                     .onChange(of: vm.encryptionKey) { _ in
-                        // Re-derive key on change
                         if !vm.encryptionKey.isEmpty {
                             vm.crypto.deriveKey(from: vm.encryptionKey)
                             vm.encryptionEnabled = true
                         }
                     }
-                    
                     Button { vm.showKey.toggle() } label: {
                         Image(systemName: vm.showKey ? "eye.slash" : "eye")
                             .font(.system(size: 10)).foregroundColor(Theme.text2)
@@ -273,38 +249,28 @@ struct MainView: View {
                             .foregroundColor(vm.keyCopied ? Theme.accent : Theme.text2)
                     }
                 }
-                .padding(8)
-                .background(Theme.bg0)
-                .cornerRadius(6)
+                .padding(8).background(Theme.bg0).cornerRadius(6)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border))
             }
             
             HStack(spacing: 6) {
-                // Fix #4: Show correct encryption state
                 settingsBtn(icon: vm.isEncryptionActive ? "lock.fill" : "lock.open",
                            label: vm.isEncryptionActive ? "AES-GCM" : (vm.encryptionKey.isEmpty ? "No Key" : "Off"),
                            active: vm.isEncryptionActive,
                            color: vm.isEncryptionActive ? Theme.accent : Theme.danger) {
-                    if vm.encryptionKey.isEmpty {
-                        vm.addLog("Set an encryption key first", .warning)
-                        vm.haptic.error()
-                    } else {
+                    if vm.encryptionKey.isEmpty { vm.addLog("Set an encryption key first", .warning); vm.haptic.error() }
+                    else {
                         vm.encryptionEnabled.toggle()
-                        if vm.encryptionEnabled {
-                            vm.crypto.deriveKey(from: vm.encryptionKey)
-                        }
+                        if vm.encryptionEnabled { vm.crypto.deriveKey(from: vm.encryptionKey) }
                         vm.addLog("Encryption \(vm.encryptionEnabled ? "on" : "off")", .info)
                     }
                 }
-                
                 settingsBtn(icon: vm.soundEnabled ? "speaker.wave.2" : "speaker.slash",
                            label: vm.soundEnabled ? "Sound" : "Muted",
                            active: vm.soundEnabled,
                            color: vm.soundEnabled ? Theme.accent : Theme.textMuted) {
-                    vm.soundEnabled.toggle()
-                    vm.sound.enabled = vm.soundEnabled
+                    vm.soundEnabled.toggle(); vm.sound.enabled = vm.soundEnabled
                 }
-                
                 settingsBtn(icon: vm.ble.showMeshLinkOnly ? "antenna.radiowaves.left.and.right" : "wifi",
                            label: vm.ble.showMeshLinkOnly ? "Mesh" : "All",
                            active: vm.ble.showMeshLinkOnly,
@@ -313,16 +279,27 @@ struct MainView: View {
                 }
             }
             
-            Button(action: vm.leaveMesh) {
-                HStack(spacing: 5) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right").font(.system(size: 10))
-                    Text("Leave Mesh").font(.system(size: 10, weight: .semibold, design: .monospaced))
+            HStack(spacing: 6) {
+                Button { vm.haptic.tap(); vm.showSessionsSheet = true } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "bubble.left.and.bubble.right").font(.system(size: 10))
+                        Text("Sessions").font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    }
+                    .foregroundColor(Theme.purple)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Theme.purple.opacity(0.08)).cornerRadius(6)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.purple.opacity(0.2)))
                 }
-                .foregroundColor(Theme.danger)
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(Theme.danger.opacity(0.08))
-                .cornerRadius(6)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.danger.opacity(0.2)))
+                Button(action: vm.leaveMesh) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "rectangle.portrait.and.arrow.right").font(.system(size: 10))
+                        Text("Leave Mesh").font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    }
+                    .foregroundColor(Theme.danger)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Theme.danger.opacity(0.08)).cornerRadius(6)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.danger.opacity(0.2)))
+                }
             }
         }
         .padding(12)
@@ -338,8 +315,7 @@ struct MainView: View {
             }
             .foregroundColor(color)
             .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(color.opacity(0.08))
-            .cornerRadius(6)
+            .background(color.opacity(0.08)).cornerRadius(6)
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(active ? color.opacity(0.2) : Theme.border))
         }
     }
@@ -358,15 +334,13 @@ struct MainView: View {
     
     private func tabBtn(icon: String, label: String, tab: MeshViewModel.AppTab, badge: Int) -> some View {
         Button {
-            vm.haptic.selection()  // Fix #7
-            vm.activeTab = tab  // Fix #3: panels close via didSet
+            vm.haptic.selection(); vm.activeTab = tab
             if tab == .chat { vm.unreadCount = 0; vm.notifications.clearBadge() }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 10))
                 Text(label.uppercased())
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .tracking(0.5)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(0.5)
             }
             .foregroundColor(vm.activeTab == tab ? Theme.accent : Theme.textMuted)
             .padding(.horizontal, 14).padding(.vertical, 6)
@@ -379,8 +353,7 @@ struct MainView: View {
                         .font(.system(size: 8, weight: .bold))
                         .foregroundColor(Theme.bg0)
                         .frame(width: 14, height: 14)
-                        .background(Theme.accent)
-                        .clipShape(Circle())
+                        .background(Theme.accent).clipShape(Circle())
                         .offset(x: 3, y: -3)
                 }
             }
